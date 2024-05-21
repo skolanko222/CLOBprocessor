@@ -28,6 +28,8 @@ public class ClobProcessor {
     }
 
     private String tbName;
+    private String ftCatalogName;
+    private String ftIndexName = "FT_ID";
     
     public ClobProcessor(String url) {
         try{
@@ -66,6 +68,24 @@ public class ClobProcessor {
             }
         }
     }
+    private boolean checkIfFtCatalogExists(String dbName, String ftCatalogName) throws SQLException {
+        String sql = "USE " + dbName + "; SELECT name FROM sys.fulltext_catalogs WHERE name = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, ftCatalogName );
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+    private boolean checkIfFtIndexExists(String dbName, String tbName) throws SQLException {
+        String sql = "USE " + dbName + "; SELECT * FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID(?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, tbName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
     public void initDatabase() throws SQLException {
         String sql;
         if(!checkIfDBExists(dbName)) {
@@ -81,7 +101,8 @@ public class ClobProcessor {
         else {
             System.out.println("Database already exists");
         }
-        sql = "USE " + dbName + "; CREATE TABLE " + tbName +" (ID INT IDENTITY(1,1) NOT NULL PRIMARY KEY, Content NVARCHAR(MAX) );";
+
+        sql = "USE " + dbName + "; CREATE TABLE " + tbName +" (ID INT IDENTITY(1,1) NOT NULL CONSTRAINT " + ftIndexName + " PRIMARY KEY, Content NVARCHAR(MAX) );";
 
         if(!checkIfTableExists(dbName, tbName)) {
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -94,6 +115,36 @@ public class ClobProcessor {
         }
         else {
             System.out.println("Table already exists");
+        }
+        // create full text CATALOG
+        ftCatalogName = tbName + "_FTC";
+
+        if(!checkIfFtCatalogExists(dbName, ftCatalogName)) {
+            sql = "USE " + dbName + "; CREATE FULLTEXT CATALOG " + ftCatalogName + " AS DEFAULT;";
+            try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+                pstmt.executeUpdate();
+            }
+            catch (SQLServerException e) {
+                System.out.println("Full text catalog creation failed");
+                e.printStackTrace();
+            }
+        }
+        else {
+            System.out.println("Full text catalog already exists");
+        }
+        // create full text index
+        if(!checkIfFtIndexExists(dbName, tbName)) {
+            sql = "USE " + dbName + "; CREATE FULLTEXT INDEX ON " + tbName + "(Content) KEY INDEX " + ftIndexName + " ON " + ftCatalogName + ";";
+            try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+                pstmt.executeUpdate();
+            }
+            catch (SQLServerException e) {
+                System.out.println("Full text index creation failed");
+                e.printStackTrace();
+            }
+        }
+        else {
+            System.out.println("Full text index already exists");
         }
     }
 
@@ -170,7 +221,7 @@ public class ClobProcessor {
             clobProcessor.saveDocument(null, "This is the content of Document2 ĄĘŚĆŻŹŁÓ");
 //
 //            // Searching for a document
-//            clobProcessor.searchDocument("content");
+            clobProcessor.searchDocument("content");
 //
 //            clobProcessor.close();
         } catch (SQLException e) {
