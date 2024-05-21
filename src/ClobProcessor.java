@@ -5,6 +5,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 
 public class ClobProcessor {
     public String getDbName() {
@@ -18,7 +19,10 @@ public class ClobProcessor {
     }
 
     private String dbName;
-
+    private String tbName;
+    private String ftCatalogName;
+    private String ftIndexName = "FT_ID";
+    private String language = "English"; // TODO: add support for other languages
     public String getTbName() {
         return tbName;
     }
@@ -27,10 +31,6 @@ public class ClobProcessor {
         this.tbName = tbName;
     }
 
-    private String tbName;
-    private String ftCatalogName;
-    private String ftIndexName = "FT_ID";
-    
     public ClobProcessor(String url) {
         try{
             connection = DriverManager.getConnection(url);
@@ -41,7 +41,7 @@ public class ClobProcessor {
     public ClobProcessor(Connection connection) {
         this.connection = connection;
     }
-    private boolean checkIfDBExists(String dbName) throws SQLException {
+    boolean checkIfDBExists(String dbName) throws SQLException {
         String sql = "SELECT name FROM master.dbo.sysdatabases WHERE name = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, dbName);
@@ -50,7 +50,7 @@ public class ClobProcessor {
             }
         }
     }
-    private boolean checkIfTableExists(String dbName, String tbName) throws SQLException {
+    boolean checkIfTableExists(String dbName, String tbName) throws SQLException {
         String sql = "USE " + dbName + "; SELECT name FROM sys.tables WHERE name = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, tbName);
@@ -59,7 +59,7 @@ public class ClobProcessor {
             }
         }
     }
-    private boolean checkIfDocumentExists(Integer ID) throws SQLException {
+    boolean checkIfDocumentExists(Integer ID) throws SQLException {
         String sql = "USE " + dbName + "; SELECT ID FROM documents WHERE ID = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, ID.toString());
@@ -120,7 +120,7 @@ public class ClobProcessor {
         ftCatalogName = tbName + "_FTC";
 
         if(!checkIfFtCatalogExists(dbName, ftCatalogName)) {
-            sql = "USE " + dbName + "; CREATE FULLTEXT CATALOG " + ftCatalogName + " AS DEFAULT;";
+            sql = "USE " + dbName + "; CREATE FULLTEXT CATALOG " + ftCatalogName + " AS DEFAULT " ;
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
                 pstmt.executeUpdate();
             }
@@ -154,7 +154,7 @@ public class ClobProcessor {
         }
     }
 
-    public void saveDocument(Integer ID, String documentContent) throws SQLException {
+    public Integer saveDocument(Integer ID, String documentContent) throws SQLException {
         String sql = "USE " + dbName + ";";
         try {
             PreparedStatement pstmt;
@@ -165,42 +165,76 @@ public class ClobProcessor {
                 pstmt = connection.prepareStatement(sql);
                 pstmt.setString(1, ID.toString());
                 pstmt.setString(2, documentContent);
+                return ID;
             }
             else {
-                sql += "INSERT INTO " + tbName + " (Content) VALUES (?);";
+                int newID = 0;
+                sql += "INSERT INTO " + tbName + " (Content) OUTPUT INSERTED.ID VALUES (?);";
                 pstmt = connection.prepareStatement(sql);
-                pstmt.setString(1, documentContent);
+                try (PreparedStatement pstmt1 = connection.prepareStatement(sql)) {
+                    pstmt.setString(1, documentContent);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        if (rs.next()) {
+                            newID = rs.getInt(1);
+                        }
+                    }
+                }
+                return newID;
+
             }
-            pstmt.executeUpdate();
         }
         catch (SQLServerException e) {
             System.out.println("Document insertion failed");
             e.printStackTrace();
+            return null;
         }
     }
 
-    public void deleteDocument(Integer ID) throws SQLException {
+    public boolean deleteDocument(Integer ID) throws SQLException {
         String sql = "USE " + dbName + ";";
         sql += "DELETE FROM documents WHERE ID = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, ID.toString());
             pstmt.executeUpdate();
+            return true;
+        }
+        catch (SQLServerException e) {
+            System.out.println("Document deletion failed");
+            e.printStackTrace();
+            return false;
         }
     }
 
-    public void searchDocument(String searchTerm) throws SQLException {
+    // Search for a document that contains the searchTerm
+    // Returns the ArrayList of IDs of the documents that contain the searchTerm
+    public ArrayList<String> searchContainDocument(String searchTerm) throws SQLException {
         String sql = "SELECT ID, Content FROM documents WHERE CONTAINS(Content, ?)";
+        ArrayList<String> results = new ArrayList<>();
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, searchTerm);
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
-                    String ID = rs.getString("ID");
-                    String Content = rs.getString("Content");
-                    System.out.println("Document Name: " + ID);
-                    System.out.println("Content: " + Content);
+                    results.add(rs.getString("ID"));
                 }
             }
         }
+        return results;
+    }
+
+    // Search for a document that contains the searchTerm:
+    // searches for all documents that contain words related to searchTerm
+    public ArrayList<String> searchFreeTextDocument(String searchTerm) throws SQLException {
+        String sql = "SELECT ID, Content FROM documents WHERE FREETEXT(Content, ?)";
+        ArrayList<String> results = new ArrayList<>();
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, searchTerm);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(rs.getString("ID"));
+                }
+            }
+        }
+        return results;
     }
 
     public static void main(String[] args) {
@@ -216,16 +250,20 @@ public class ClobProcessor {
         }
 
         try {
-            // Saving a document
-//            clobProcessor.deleteDocument(1);
-            clobProcessor.saveDocument(null, "This is the content of Document2 ĄĘŚĆŻŹŁÓ");
-//
-//            // Searching for a document
-            clobProcessor.searchDocument("content");
-//
-//            clobProcessor.close();
+
+            ArrayList<String> results = clobProcessor.searchContainDocument("words");
+            for (String result : results) {   // Printing the results
+                System.out.println(result);
+            }
         } catch (SQLException e) {
             e.printStackTrace();
+        }
+        finally {
+            try {
+                clobProcessor.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
     }
 }
