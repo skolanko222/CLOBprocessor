@@ -6,11 +6,7 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.logging.*;
 
@@ -32,7 +28,7 @@ public class ClobProcessor {
     private String ftIndexName = "FT_ID";
     private String primaryKeyname = "ID";
     private final String language = "English"; // TODO: add support for other languages
-    private final Logger logger = new Logger("ClobProcessorLogger", null) {};
+    static public final Logger logger = new Logger("ClobProcessorLogger", null) {};
     public void setTbName(String tbName) {
         this.tbName = tbName;
     }
@@ -41,18 +37,19 @@ public class ClobProcessor {
         this.ftIndexName = "FT_" + primaryKeyname;
     }
 
-    // Constructor that initializes the connection to the database using the url
-    public ClobProcessor(String url) {
+    static {
         try {
             //FileHandler file name with max size and number of log files limit
             Handler fileHandler = new FileHandler("./logger.log", 2000, 5);
             fileHandler.setFormatter(new SimpleFormatter());
             logger.addHandler(fileHandler);
-            logger.log(Level.INFO, "Logger initialized");
+        logger.log(Level.INFO, "Logger initialized");
         } catch (SecurityException | IOException e) {
             e.printStackTrace();
-        }
-        logger.addHandler(new ConsoleHandler());
+    }
+        logger.addHandler(new ConsoleHandler());}
+    // Constructor that initializes the connection to the database using the url
+    public ClobProcessor(String url) {
         try{
             connection = DriverManager.getConnection(url);
         } catch (SQLException e) {
@@ -102,15 +99,24 @@ public class ClobProcessor {
 
     }
     // Check if the document exists inside the "tbName" table
-    public boolean checkIfDocumentExists(Integer ID) throws SQLException {
+    public boolean checkIfDocumentExists(Integer ID)  {
         String sql = "USE " + dbName + "; SELECT " + primaryKeyname + " FROM " + tbName + " WHERE " + primaryKeyname + " = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, ID.toString());
             try (ResultSet rs = pstmt.executeQuery()) {
                 return rs.next();
             }
+            catch(SQLServerException e) {
+                logger.log(Level.SEVERE, "Document existence check failed");
+                return false;
+            }
+        }
+        catch (SQLException e) {
+            logger.log(Level.SEVERE, "Document existence check failed");
+            return false;
         }
     }
+
     // Check if the full text catalog exists
     public boolean checkIfFtCatalogExists(String dbName, String ftCatalogName) throws SQLException {
         String sql = "USE " + dbName + "; SELECT name FROM sys.fulltext_catalogs WHERE name = ?";
@@ -142,6 +148,7 @@ public class ClobProcessor {
             }
             catch (SQLServerException e) {
                 logger.log(Level.SEVERE, "Database creation failed");
+                throw e;
             }
         }
         else {
@@ -157,7 +164,7 @@ public class ClobProcessor {
             }
             catch (SQLServerException e) {
                 logger.log(Level.SEVERE, "Table creation failed");
-                e.printStackTrace();
+                throw e;
             }
         }
         else {
@@ -173,6 +180,7 @@ public class ClobProcessor {
             }
             catch (SQLServerException e) {
                 logger.log(Level.SEVERE, "Full text catalog creation failed");
+                throw e;
             }
         }
         else {
@@ -186,6 +194,7 @@ public class ClobProcessor {
             }
             catch (SQLServerException e) {
                 logger.log(Level.SEVERE, "Full text index creation failed");
+                throw e;
             }
         }
         else {
@@ -204,6 +213,10 @@ public class ClobProcessor {
         try {
             PreparedStatement pstmt;
             if(ID != null) {
+                if(checkIfDocumentExists(ID)) {
+                    logger.log(Level.WARNING, "Document with this ID already exists");
+                    throw new SQLException("Document with this ID already exists");
+                }
                 sql += "SET IDENTITY_INSERT " + tbName + " ON;"; // Enable inserting ID
                 sql += "INSERT INTO " + tbName + " (" + primaryKeyname + ", Content) VALUES (?, ?);";
                 sql += "SET IDENTITY_INSERT " + tbName + " OFF;";
@@ -225,10 +238,9 @@ public class ClobProcessor {
                         }
                     }
                 }
+//                logger.log(Level.INFO, "Document saved with ID: " + newID);
                 return newID;
-
             }
-
         }
         catch (SQLServerException e) {
             logger.log(Level.SEVERE, "Document insertion failed");
@@ -237,19 +249,18 @@ public class ClobProcessor {
     }
     // Save the document to the database from the file, if ID is null, a new ID is generated, otherwise the document is saved with the given ID
     // This function stores whole content of the file into one row of the table
-    public boolean saveDocumentFromFile(Integer id, String path) {
+    public Integer saveDocumentFromFile(Integer id, String path) throws SQLException {
         String content = readTextFile(path);
         try {
-            saveDocument(id, content);
-            return true;
+            return saveDocument(id, content);
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to insert the document from the file");
-            return false;
+            throw e;
         }
     }
     // Save the document into the database from the file,
     // Puts each line of the file into a separate row of the table
-    public Integer saveDocumentFromFileByLine(String path) {
+    public Integer saveDocumentFromFileByLine(String path) throws SQLException {
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
             String line;
             Integer id = null;
@@ -264,7 +275,7 @@ public class ClobProcessor {
         }
         catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to insert the document from the file (line by line)");
-            return null;
+            throw e;
         }
 
     }
@@ -279,7 +290,7 @@ public class ClobProcessor {
         }
         catch (SQLServerException e) {
             logger.log(Level.SEVERE, "Document deletion failed");
-            return false;
+            throw e;
         }
     }
     // Search for a document that contains the searchTerm
@@ -322,17 +333,10 @@ public class ClobProcessor {
                 return null;
             }
             String content = new String(data);
-            saveDocument(null, content);
             return content;
-        } catch (IOException | SQLException e) {
+        } catch (IOException e) {
             logger.log(Level.SEVERE, "Failed to open the file");
             return null;
         }
-    }
-    public static void main(String[] args) {
-        String url = "jdbc:sqlserver://DESKTOP-KLF254Q;encrypt=true;trustServerCertificate=true;integratedSecurity=true;";
-        ClobProcessor clobProcessor = new ClobProcessor(url);
-        clobProcessor.setDbName("CLOBtest");
-        clobProcessor.setTbName("Documents");
     }
 }
