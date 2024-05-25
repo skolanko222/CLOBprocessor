@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/sql_test.iml" filepath="$PROJECT_DIR$/sql_test.iml" />
+      <module fileurl="file://$PROJECT_DIR$/CLOBprocessor.iml" filepath="$PROJECT_DIR$/CLOBprocessor.iml" />
     </modules>
   </component>
 </project>

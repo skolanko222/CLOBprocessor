@@ -1,0 +1,12 @@
+maj 25, 2024 3:24:11 PM main.ClobProcessor <init>
+INFO: Logger initialized
+maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
+INFO: Database already exists
+maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
+INFO: Table already exists
+maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
+INFO: Full text catalog already exists
+maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
+INFO: Full text index already exists
+maj 25, 2024 3:24:12 PM main.ClobProcessor saveBulkDocument
+SEVERE: Document insertion failed
