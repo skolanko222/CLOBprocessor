@@ -1,6 +1,3 @@
-package test;
-
-import main.ClobProcessor;
 import org.junit.*;
 import static org.junit.Assert.*;
 

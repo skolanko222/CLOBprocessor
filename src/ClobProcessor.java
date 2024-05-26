@@ -1,5 +1,3 @@
-package main;
-
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 
 import java.io.BufferedReader;

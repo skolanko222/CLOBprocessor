@@ -1,12 +1,6 @@
-maj 25, 2024 3:24:11 PM main.ClobProcessor <init>
+May 26, 2024 12:46:44 PM ClobProcessor <clinit>
 INFO: Logger initialized
-maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
-INFO: Database already exists
-maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
-INFO: Table already exists
-maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
-INFO: Full text catalog already exists
-maj 25, 2024 3:24:12 PM main.ClobProcessor initDatabase
-INFO: Full text index already exists
-maj 25, 2024 3:24:12 PM main.ClobProcessor saveBulkDocument
-SEVERE: Document insertion failed
+May 26, 2024 12:46:50 PM ClobProcessorGUI saveSetingsButtonPressed
+INFO: Settings saved.
+May 26, 2024 12:47:20 PM ClobProcessor <init>
+SEVERE: Connection to the database failed
