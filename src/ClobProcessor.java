@@ -4,28 +4,24 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.logging.*;
 
 public class ClobProcessor {
-    public String getDbName() {
-        return dbName;
-    }
 
     private Connection connection;
-
     public void setDbName(String dbName) {
         this.dbName = dbName;
     }
-
     private String dbName;
     private String tbName;
     private String ftCatalogName;
-
     private String ftIndexName = "FT_ID";
     private String primaryKeyname = "ID";
-    private final String language = "English"; // TODO: add support for other languages
+    private boolean createTable = true;
+    private String language = "english";
     static public final Logger logger = new Logger("ClobProcessorLogger", null) {};
     public void setTbName(String tbName) {
         this.tbName = tbName;
@@ -34,6 +30,18 @@ public class ClobProcessor {
         this.primaryKeyname = primaryKeyname;
         this.ftIndexName = "FT_" + primaryKeyname;
     }
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+    private String getLanguageCode(String language) {
+        return switch (language) {
+            case "polish" -> "1045";
+            case "german" -> "1031";
+            case "french" -> "1036";
+            default -> "1033"; // English
+        };
+    }
+    public void setCreateTableFlag(boolean createTable) {this.createTable = createTable;}
 
     static {
         try {
@@ -87,7 +95,7 @@ public class ClobProcessor {
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (!rs.next()) {
                     logger.log(Level.WARNING, "Table does not have the correct primary key");
-                    return false;
+                    throw new SQLException("Tabela istnieje, ale nie ma poprawnego klucza głównego");
                 }
                 else {
                     return true;
@@ -152,12 +160,18 @@ public class ClobProcessor {
         else {
             logger.log(Level.INFO, "Database already exists");
         }
+        logger.log(Level.INFO, "Database initialized");
 
         //ensure that the table has a unique, single-column, non-nullable index.
+        ftIndexName += "_" + tbName.toUpperCase();
         sql = "USE " + dbName + "; CREATE TABLE " + tbName +" ("+ primaryKeyname + " INT IDENTITY(1,1) NOT NULL CONSTRAINT " + ftIndexName + " PRIMARY KEY, Content NVARCHAR(MAX) );";
 
         if(!checkIfTableExists(dbName, tbName)) {
+            if (!createTable) {
+                throw new SQLException("Nie można połączyć, bo tabela nie istnieje!");
+            }
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+
                 pstmt.executeUpdate();
             }
             catch (SQLServerException e) {
@@ -167,7 +181,11 @@ public class ClobProcessor {
         }
         else {
             logger.log(Level.INFO, "Table already exists");
+            if(createTable) {
+                throw new SQLException("Nie można utworzyć tabeli, ponieważ już istnieje!");
+            }
         }
+        logger.log(Level.INFO, "Table initialized");
         // create full text CATALOG
         ftCatalogName = tbName + "_FTC";
 
@@ -184,9 +202,10 @@ public class ClobProcessor {
         else {
             logger.log(Level.INFO, "Full text catalog already exists");
         }
+        logger.log(Level.INFO, "Full text catalog initialized");
         // create full text index
         if(!checkIfFtIndexExists(dbName, tbName)) {
-            sql = "USE " + dbName + "; CREATE FULLTEXT INDEX ON " + tbName + "(Content) KEY INDEX " + ftIndexName + " ON " + ftCatalogName + ";";
+            sql = "USE " + dbName + "; CREATE FULLTEXT INDEX ON " + tbName + "(Content LANGUAGE " + getLanguageCode(language) + " ) KEY INDEX " + ftIndexName + " ON " + ftCatalogName + ";";
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
                 pstmt.executeUpdate();
             }
@@ -198,6 +217,7 @@ public class ClobProcessor {
         else {
             logger.log(Level.INFO, "Full text index already exists");
         }
+        logger.log(Level.INFO, "Full text index initialized");
     }
     // Close the connection to the database
     public void close() throws SQLException {
@@ -249,6 +269,7 @@ public class ClobProcessor {
     // This function stores whole content of the file into one row of the table
     public Integer saveDocumentFromFile(Integer id, String path) throws SQLException {
         String content = readTextFile(path);
+        content = new String(content.getBytes(), StandardCharsets.UTF_8);
         try {
             return saveDocument(id, content);
         } catch (SQLException e) {
@@ -263,6 +284,7 @@ public class ClobProcessor {
             String line;
             Integer id = null;
             while ((line = br.readLine()) != null) {
+                //line = new String(line.getBytes(), StandardCharsets.UTF_8);
                 id = saveDocument(null, line);
             }
             return id;
@@ -284,6 +306,7 @@ public class ClobProcessor {
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, ID.toString());
             pstmt.executeUpdate();
+            logger.log(Level.INFO, "Document deleted");
             return true;
         }
         catch (SQLServerException e) {
@@ -291,25 +314,30 @@ public class ClobProcessor {
             throw e;
         }
     }
+    public void dropDatabase() throws SQLException {
+        String sql = "USE master; DROP DATABASE " + dbName;
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.executeUpdate();
+        }
+        catch (SQLServerException e) {
+            logger.log(Level.INFO, "Database deletion failed");
+            throw e;
+        }
+    }
     // Search for a document that contains the searchTerm
     // Returns the ArrayList of IDs of the documents that contain the searchTerm
     public ArrayList<String> searchContainDocument(String searchTerm) throws SQLException {
         String sql = "SELECT " + primaryKeyname + ", Content FROM " + tbName + " WHERE CONTAINS(Content, ?)";
-        ArrayList<String> results = new ArrayList<>();
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, searchTerm);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    results.add(rs.getString(primaryKeyname));
-                }
-            }
-        }
-        return results;
+        return getFtsResults(searchTerm, sql);
     }
     // Search for a document that contains the searchTerm:
     // searches for all documents that contain words related to searchTerm
     public ArrayList<String> searchFreeTextDocument(String searchTerm) throws SQLException {
         String sql = "SELECT " + primaryKeyname + ", Content FROM " + tbName + " WHERE FREETEXT(Content, ?)";
+        return getFtsResults(searchTerm, sql);
+    }
+
+    private ArrayList<String> getFtsResults(String searchTerm, String sql) throws SQLException {
         ArrayList<String> results = new ArrayList<>();
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, searchTerm);
@@ -321,6 +349,7 @@ public class ClobProcessor {
         }
         return results;
     }
+
     //function to read a text file
     public String readTextFile(String path) {
         try {
@@ -330,8 +359,7 @@ public class ClobProcessor {
                 logger.log(Level.SEVERE, "Failed to read the content of the file");
                 return null;
             }
-            String content = new String(data);
-            return content;
+            return new String(data);
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Failed to open the file");
             return null;

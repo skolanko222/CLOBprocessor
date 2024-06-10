@@ -7,10 +7,10 @@ import java.util.ArrayList;
 
 public class ClobProcessorTest {
 
-    private static final String DB_URL = "jdbc:sqlserver://DESKTOP-KLF254Q;encrypt=true;trustServerCertificate=true;integratedSecurity=true;";
-    private static final String DB_NAME = "CLOBtest";
-    private static final String TB_NAME = "Documents2";
-    private static final String PK_NAME = "IDtest";
+    static String DB_URL = "jdbc:sqlserver://DESKTOP-KLF254Q;encrypt=true;trustServerCertificate=true;integratedSecurity=true;";
+    static String DB_NAME = "CLOBtest1";
+    static String TB_NAME = "CLOBtest1";
+    static String PK_NAME = "IDtest";
 
     private static ClobProcessor clobProcessor;
 
@@ -20,15 +20,22 @@ public class ClobProcessorTest {
         clobProcessor.setDbName(DB_NAME);
         clobProcessor.setTbName(TB_NAME);
         clobProcessor.setPrimaryKeyname(PK_NAME);
+        clobProcessor.setCreateTableFlag(true);
+        clobProcessor.setLanguage("english");
     }
 
     @Before
     public void setUp() throws SQLException {
+        try {
+            clobProcessor.dropDatabase();
+        } catch (SQLException ignored) {}
         clobProcessor.initDatabase();
     }
 
     @AfterClass
     public static void tearDown() throws SQLException {
+        // drop database
+        clobProcessor.dropDatabase();
         clobProcessor.close();
     }
 
@@ -77,36 +84,35 @@ public class ClobProcessorTest {
     }
 
     @Test
-    public void testSearchFreeTextDocument() throws SQLException {
+    public void testSearchFreeTextDocument() throws SQLException, InterruptedException {
         String content = "Safe searchable content.";
         clobProcessor.saveDocument(null, content);
         //wait for the document to be indexed
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        Thread.sleep(5000);
         ArrayList<String> results = clobProcessor.searchFreeTextDocument("contents");
         System.out.println(results);
         assertFalse(results.isEmpty());
     }
     @Test
-    public void testSearchFreeTextDocument2() throws SQLException {
+    public void testSearchFreeTextDocument2() throws SQLException, InterruptedException {
         String searchTerm = "content";
+        clobProcessor.saveDocument(null, "This is a test content.");
+        //wait for the document to be indexed
+        Thread.sleep(5000);
         ArrayList<String> results = clobProcessor.searchContainDocument(searchTerm);
         System.out.println(results);
         assertFalse(results.isEmpty());
     }
     @Test
     public void testReadTextFileAndStore() throws SQLException {
-        String content = clobProcessor.readTextFile("./bible.txt");
+        String content = clobProcessor.readTextFile("./exampleClobData2.txt");
         int id = clobProcessor.saveDocument(null, content);
         assertTrue(clobProcessor.checkIfDocumentExists(id));
     }
 
     @Test
     public void testReadTextFileAndStoreLineByLine() throws SQLException {
-        Integer id = clobProcessor.saveDocumentFromFileByLine("./bible.txt");
+        Integer id = clobProcessor.saveDocumentFromFileByLine("./exampleClobData2.txt");
         assertTrue(clobProcessor.checkIfDocumentExists(id));
     }
 }

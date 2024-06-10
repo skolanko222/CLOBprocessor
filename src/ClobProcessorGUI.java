@@ -9,6 +9,8 @@ public class ClobProcessorGUI extends JFrame{
     private String TB_NAME = "Documents";
     private String DB_NAME = "CLOBtest";
     private String PK_NAME = "IDtest";
+    private boolean createTable = true;
+    private String language = "english";
     private final Logger logger = ClobProcessor.logger;
     private ClobProcessor clobProcessor = null;
     private JFileChooser fileChooser = new JFileChooser();
@@ -33,8 +35,12 @@ public class ClobProcessorGUI extends JFrame{
     private JButton buttonContains;
     private JTextField textFreetext;
     private JButton buttonFreetext;
+    private JTextArea searchOutputArea;
+    private JCheckBox createTableCheckBox;
+    private JComboBox languageComboBox;
 
     public ClobProcessorGUI() {
+        languageComboBox.setModel(new DefaultComboBoxModel(new String[]{"english", "polish", "german", "french"}));
         urlField.setText(URL);
         DBnameField.setText(DB_NAME);
         TBnameField.setText(TB_NAME);
@@ -47,8 +53,8 @@ public class ClobProcessorGUI extends JFrame{
         deleteButton.addActionListener(e -> { deleteButtonPressed(); });
         buttonContains.addActionListener(e -> { searchDocument(1); });
         buttonFreetext.addActionListener(e -> { searchDocument(2); });
+        createTableCheckBox.addActionListener(e -> {createTable = createTableCheckBox.isSelected();});
     }
-
     private void searchDocument(int i) {
         if(clobProcessor == null) {
             JOptionPane.showMessageDialog(null, "No connection established.");
@@ -56,7 +62,6 @@ public class ClobProcessorGUI extends JFrame{
             return;
         }
         JTextField textBox = i == 1 ? textContains : textFreetext;
-
         if(textBox.getText().isEmpty()) {
             JOptionPane.showMessageDialog(null, "No text specified.");
             logger.log(Level.INFO, "No text specified for searching.");
@@ -66,18 +71,22 @@ public class ClobProcessorGUI extends JFrame{
             ArrayList<String> ids = new ArrayList<>();
             if(i == 1) {
                 ids = clobProcessor.searchContainDocument(textBox.getText());
-                JOptionPane.showMessageDialog(null, ids);
+                searchOutputArea.setText("");
+                for(String id : ids) {
+                    searchOutputArea.append(id + "\n");
+                }
             }
             else if(i == 2) {
                 ids = clobProcessor.searchFreeTextDocument(textBox.getText());
-                JOptionPane.showMessageDialog(null, ids);
+                searchOutputArea.setText("");
+                for(String id : ids) {
+                    searchOutputArea.append(id + "\n");
+                }
             }
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(null, "Error searching document: \n" + e.getMessage());
         }
-
     }
-
     private void destroyConnection() {
         if(clobProcessor != null) {
             try {
@@ -93,22 +102,25 @@ public class ClobProcessorGUI extends JFrame{
         DB_NAME = DBnameField.getText();
         TB_NAME = TBnameField.getText();
         PK_NAME = PKnameField.getText();
+
+        language = languageComboBox.getSelectedItem().toString();
+        createTable = createTableCheckBox.isSelected();
+
         // check if all fields are filled
         if(URL.isEmpty() || DB_NAME.isEmpty() || TB_NAME.isEmpty() || PK_NAME.isEmpty()) {
             JOptionPane.showMessageDialog(null, "Uzupełnij dane!");
             logger.log(Level.INFO, "Not all fields filled.");
             return;
         }
-
-
         logger.log(Level.INFO, "Settings saved.");
         destroyConnection();
-
         try {
             clobProcessor = new ClobProcessor(URL);
             clobProcessor.setDbName(DB_NAME);
             clobProcessor.setTbName(TB_NAME);
             clobProcessor.setPrimaryKeyname(PK_NAME);
+            clobProcessor.setCreateTableFlag(createTable);
+            clobProcessor.setLanguage(language);
             clobProcessor.initDatabase();
         } catch (SQLException e) {
             logger.log(Level.INFO, e.getMessage());
@@ -145,10 +157,10 @@ public class ClobProcessorGUI extends JFrame{
             int id = 0;
             try {
                 id = clobProcessor.saveDocumentFromFile(IDvalue1.getText().isEmpty() ? null : Integer.valueOf(IDvalue1.getText()), path1.getText());
+                logger.log(Level.INFO, "Document saved with ID: " + id);
             } catch (SQLException e) {
                 JOptionPane.showMessageDialog(null, "Error saving document: \n" + e.getMessage());
             }
-            logger.log(Level.INFO, "Document saved with ID: " + id);
         }
         else if(pathID == 2) {
             if (path2.getText().isEmpty()) {
@@ -159,10 +171,10 @@ public class ClobProcessorGUI extends JFrame{
             int id = 0;
             try {
                 id = clobProcessor.saveDocumentFromFileByLine(path2.getText());
+                logger.log(Level.INFO, "Last document saved with ID: " + id);
             } catch (SQLException e) {
                 JOptionPane.showMessageDialog(null, "Error saving document: \n" + e.getMessage());
             }
-            logger.log(Level.INFO, "Last document saved with ID: " + id);
         }
         JOptionPane.showMessageDialog(null, "Document saved.");
     }
